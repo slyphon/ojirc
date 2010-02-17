@@ -12,7 +12,7 @@ def add_to_classpath(*stuff)
   ENV['CLASSPATH'] = ary.join(':')
 end
 
-LIBS = FileList['lib/**/*.jar']
+LIBS = FileList['book', 'lib/**/*.jar']
 
 directory CLASSES_DIR
 
