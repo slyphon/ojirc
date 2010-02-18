@@ -1,5 +1,9 @@
 CLASSES_DIR = File.expand_path('./classes')
 
+LIBS = FileList['book', 'lib/**/*.jar']
+
+LOG4J_PROPERITES = 'lib/log4j.properties'
+
 def add_to_classpath(*stuff)
   ary = []
   if cp = ENV['CLASSPATH']
@@ -12,7 +16,9 @@ def add_to_classpath(*stuff)
   ENV['CLASSPATH'] = ary.join(':')
 end
 
-LIBS = FileList['book', 'lib/**/*.jar']
+def log4j_props
+  File.exists?(LOG4J_PROPERITES) ? "-Dlog4j.configuration=#{LOG4J_PROPERITES}" : nil
+end
 
 directory CLASSES_DIR
 
@@ -28,8 +34,13 @@ task :classpath => CLASSES_DIR do
 end
 
 task 'start-ng' => :classpath do
-  args = ['java', ENV['CLOJURE_OPTS'], 'com.martiansoftware.nailgun.NGServer', '127.0.0.1']
-  exec(args.compact.join(' '))
+  args = ['java', ENV['CLOJURE_OPTS'], log4j_props, 'com.martiansoftware.nailgun.NGServer', '127.0.0.1']
+  args.compact!
+  $stderr.puts "running: #{args.compact.join(' ')}"
+  exec(*args)
 end
 
+task 'ngircd' do
+  sh "ngircd -f config/ngircd.conf --nodaemon --passive"
+end
 
