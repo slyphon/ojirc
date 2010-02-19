@@ -1,4 +1,4 @@
-(ns clojbot
+(ns ojbot.core
   (:import 
      [java.net Socket InetSocketAddress]
      [java.util.concurrent LinkedBlockingQueue])

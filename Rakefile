@@ -1,6 +1,10 @@
 CLASSES_DIR = File.expand_path('./classes')
 
-LIBS = FileList['book', 'lib/**/*.jar']
+def _ep(path)
+  File.expand_path(path)
+end
+
+LIBS = FileList[_ep('src'), _ep('book'), 'lib/**/*.jar']
 
 LOG4J_PROPERITES = 'lib/log4j.properties'
 
@@ -23,7 +27,7 @@ end
 directory CLASSES_DIR
 
 task :classpath => CLASSES_DIR do
-  add_to_classpath(CLASSES_DIR, Dir.getwd, *LIBS)
+  add_to_classpath(CLASSES_DIR, LIBS, Dir.getwd)
 
   if cj_ext_dir = ENV['CLOJURE_EXT']
     exts = Dir["#{cj_ext_dir}/*"]
