@@ -1,8 +1,11 @@
 (ns clojbot
-  (:import [java.net Socket InetSocketAddress])
-  (:use [clojure.contrib.except :only (throw-if)]
-        [clojure.contrib.logging]
-        [clojure.contrib.seq-utils :only (flatten)]))
+  (:import 
+     [java.net Socket InetSocketAddress]
+     [java.util.concurrent LinkedBlockingQueue])
+  (:use 
+     [clojure.contrib.except :only (throw-if)]
+     [clojure.contrib.logging]
+     [clojure.contrib.seq-utils :only (flatten)]))
 
 (def FREENODE "irc.freenode.net")
 
@@ -15,9 +18,10 @@
    :finger "don't finger me!"})
 
 
-(defstruct message  :tag :type :channel :sender :login :hostname :message :target :action)
-(defstruct config   :tag :hostname :port :nick :login :finger)
-(defstruct bot      :tag :config :socket :listeners :channels)
+(defstruct message    :tag :type :channel :sender :login :hostname :message :target :action)
+(defstruct config     :tag :hostname :port :nick :login :finger)
+(defstruct bot        :tag :config :socket :listeners :channels)
+(defstruct net-state  :tag :socket :outq :writer :reader)
 
 (defn bot? [x]
   (and (map? x)
@@ -38,16 +42,26 @@
   ([& kvpairs] 
    (struct-hash-map config (merge config-defaults (apply hash-map kvpairs)))))
 
+(defn create-net-state []
+  (struct-map net-state 
+              :tag        ::NetState
+              :connected  (atom false)
+              :socket     (Socket.)
+              :outq       (LinkedBlockingQueue.)
+              :out-thread (atom nil)
+              :in-thread  (atom nil))) 
+
 ; simple for now
 (defn create-bot 
   ([] 
    (create-bot (create-config)))
   ([conf] 
-   (struct-map bot :tag       ::Bot
-                   :config    (ref conf)
-                   :socket    (agent (Socket.))
-                   :listeners (ref {})
-                   :channels  (ref {}))))
+   (struct-map bot 
+               :tag       ::Bot
+               :config    (ref conf)
+               :net       (net-state)
+               :listeners (ref {})
+               :channels  (ref {}))))
 
 (defn- inet-sock-address [conf]
   (let [hostname (get conf :hostname) port (get conf :port)]
@@ -59,19 +73,15 @@
   (.connect socket (inet-sock-address conf))
   socket)
 
-(defn- do-login-stuff [bot]
-  )
+(defn- do-login-stuff [bot])
 
 (defn connect [bot]
-  (await (send-off (bot :socket) #(connect-sock % @(bot :config))))
+  (connect-sock (bot :socket) @(bot :config))
   bot)
 
 (defn disconnect [bot]
-  (await 
-    (send (bot :socket) 
-          (fn [sock] (let [sock @(bot :socket)] 
-                       (if (and (instance? Socket sock) 
-                                (not (.isClosed sock))) (.close sock)))
-            sock)))
+  (let [sock @(bot :socket)] 
+    (if (and (instance? Socket sock) 
+             (not (.isClosed sock))) (.close sock)))
   bot)
 
