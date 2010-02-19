@@ -3,11 +3,13 @@
      [java.net Socket InetSocketAddress]
      [java.util.concurrent LinkedBlockingQueue])
   (:use 
-     [clojure.contrib.except :only (throw-if)]
+     [clojure.contrib.except        :only (throw-if)]
+     [clojure.contrib.duck-streams  :only (reader writer)]
      [clojure.contrib.logging]
-     [clojure.contrib.seq-utils :only (flatten)]))
+     [clojure.contrib.seq-utils     :only (flatten)]))
 
-(def FREENODE "irc.freenode.net")
+
+(def *kill-token* ::KILL-YOURSELF)
 
 (def config-defaults 
   {:tag ::Config
@@ -42,14 +44,19 @@
   ([& kvpairs] 
    (struct-hash-map config (merge config-defaults (apply hash-map kvpairs)))))
 
+
 (defn create-net-state []
-  (struct-map net-state 
-              :tag        ::NetState
-              :connected  (atom false)
-              :socket     (Socket.)
-              :outq       (LinkedBlockingQueue.)
-              :out-thread (atom nil)
-              :in-thread  (atom nil))) 
+  (let [sock (Socket.) lbq (LinkedBlockingQueue.)]
+    (struct-map net-state 
+                :tag        ::NetState
+                :connected  (atom false)
+                :socket     (atom sock)
+                :outq       lbq 
+                :writer     (atom nil)
+                :reader     (atom nil)
+                :out-future (atom nil)
+                :in-future  (atom nil)))) 
+
 
 ; simple for now
 (defn create-bot 
@@ -59,7 +66,7 @@
    (struct-map bot 
                :tag       ::Bot
                :config    (ref conf)
-               :net       (net-state)
+               :net       (create-net-state)
                :listeners (ref {})
                :channels  (ref {}))))
 
@@ -73,15 +80,46 @@
   (.connect socket (inet-sock-address conf))
   socket)
 
-(defn- do-login-stuff [bot])
+
+(defn- output-loop [net]
+  (binding [*out* (net :writer)]
+    (loop []
+      (let [line (.take (net :outq))]
+        (if (= line *kill-token*)
+          false
+          (do (println line)
+              (recur)))))))
+
 
 (defn connect [bot]
-  (connect-sock (bot :socket) @(bot :config))
+  (let [net (bot :net) socket @(net :socket)]
+    (connect-sock socket @(bot :config))
+    (reset! (net :connected) true)
+    (reset! (net :reader) (reader socket))
+    (reset! (net :writer) (writer socket))
+    (reset! (net :out-future) (future (output-loop net))))
   bot)
 
+(defn- disconnect-sock [sock]
+  (if (and (instance? Socket sock) 
+              (not (.isClosed sock))) 
+        (do
+          (debug (str "disconnecting sock: " sock))
+          (.close sock))))
+
+(defn- stop-outputter [net]
+  (let [outq (net :outq)]
+    (doto outq
+      (.clear)
+      (.put *kill-token*))
+    @(net :out-future)))  ; wait for future to stop
+
 (defn disconnect [bot]
-  (let [sock @(bot :socket)] 
-    (if (and (instance? Socket sock) 
-             (not (.isClosed sock))) (.close sock)))
+  (let [net  (bot :net)
+        sock @(net :socket)] 
+    (disconnect-sock sock)
+    (stop-outputter net)
+    (reset! (net :socket) nil)
+    (reset! (net :connected) false))
   bot)
 
