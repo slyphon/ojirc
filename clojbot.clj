@@ -22,7 +22,7 @@
 
 (defstruct message    :tag :type :channel :sender :login :hostname :message :target :action)
 (defstruct config     :tag :hostname :port :nick :login :finger)
-(defstruct bot        :tag :config :socket :listeners :channels)
+(defstruct bot-struct :tag :config :socket :listeners :channels)
 (defstruct net-state  :tag :socket :outq :writer :reader)
 
 (defn bot? [x]
@@ -63,40 +63,39 @@
   ([] 
    (create-bot (create-config)))
   ([conf] 
-   (struct-map bot 
+   (struct-map bot-struct
                :tag       ::Bot
                :config    (ref conf)
                :net       (create-net-state)
                :listeners (ref {})
                :channels  (ref {}))))
 
-(defn- inet-sock-address [conf]
-  (let [hostname (get conf :hostname) port (get conf :port)]
-    (throw-if (nil? hostname) IllegalArgumentException "hostname must be set for bot")
-    (throw-if (nil? port)     IllegalArgumentException "port must be set for bot")
-    (InetSocketAddress. hostname port)))
+(defn- inet-sock-address [{:keys [hostname port]}]
+  (throw-if (nil? hostname) IllegalArgumentException "hostname must be set for bot")
+  (throw-if (nil? port)     IllegalArgumentException "port must be set for bot")
+  (InetSocketAddress. hostname port))
 
 (defn- connect-sock [socket conf]
   (.connect socket (inet-sock-address conf))
   socket)
 
-
-(defn- output-loop [net]
-  (binding [*out* (net :writer)]
+(defn- output-loop [{wrtr :writer :keys [outq] :as net}]
+  (binding [*out* writer]
     (loop []
-      (let [line (.take (net :outq))]
+      (let [line (.take outq)]
         (if (= line *kill-token*)
-          false
+          :finished
           (do (println line)
               (recur)))))))
 
 
-(defn connect [bot]
-  (let [net (bot :net) socket @(net :socket)]
-    (connect-sock socket @(bot :config))
+(defn connect [{:keys [net config] :as bot}]
+  (let [socket (net :socket)]
+    (debug (str "_net_ " net " _config_ " config " _socket_ " @socket))
+    (connect-sock @socket @config)
     (reset! (net :connected) true)
-    (reset! (net :reader) (reader socket))
-    (reset! (net :writer) (writer socket))
+    (reset! (net :reader) (reader @socket))
+    (reset! (net :writer) (writer @socket))
     (reset! (net :out-future) (future (output-loop net))))
   bot)
 
@@ -107,19 +106,17 @@
           (debug (str "disconnecting sock: " sock))
           (.close sock))))
 
-(defn- stop-outputter [net]
-  (let [outq (net :outq)]
-    (doto outq
-      (.clear)
-      (.put *kill-token*))
-    @(net :out-future)))  ; wait for future to stop
+(defn- stop-outputter [{:keys [outq out-future]}]
+  (doto outq
+    (.clear)
+    (.put *kill-token*))
+  @out-future)  ; wait for future to stop
 
-(defn disconnect [bot]
-  (let [net  (bot :net)
-        sock @(net :socket)] 
-    (disconnect-sock sock)
-    (stop-outputter net)
-    (reset! (net :socket) nil)
-    (reset! (net :connected) false))
+(defn disconnect [{net :net sock @(net :socket) :as bot}]
+  (disconnect-sock sock)
+  (stop-outputter net)
+  (reset! (net :socket) nil)
+  (reset! (net :connected) false)
   bot)
+
 
