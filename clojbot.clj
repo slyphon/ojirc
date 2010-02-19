@@ -80,7 +80,7 @@
   socket)
 
 (defn- output-loop [{wrtr :writer :keys [outq] :as net}]
-  (binding [*out* writer]
+  (binding [*out* wrtr]
     (loop []
       (let [line (.take outq)]
         (if (= line *kill-token*)
