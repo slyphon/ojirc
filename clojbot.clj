@@ -1,5 +1,5 @@
 (ns clojbot
-  (:import [java.net Socket])
+  (:import [java.net Socket InetSocketAddress])
   (:use [clojure.contrib.except :only (throw-if)]
         [clojure.contrib.logging]
         [clojure.contrib.seq-utils :only (flatten)]))
@@ -23,12 +23,8 @@
   (and (map? x)
        (= (x :tag) ::Bot)))
 
-; simple for now
-(defn create-bot [conf]
-  (struct-map bot :tag       ::Bot
-                  :config    conf
-                  :listeners (ref {})
-                  :channels  (ref {})))
+(defn closed? [sock]
+  (.isClosed sock))
 
 (defmacro #^{:private true} struct-hash-map [s hm]
   `(apply struct-map ~s (flatten (vec ~hm))))
@@ -42,26 +38,40 @@
   ([& kvpairs] 
    (struct-hash-map config (merge config-defaults (apply hash-map kvpairs)))))
 
-(defn- connection-args [conf]
-  (let [hostname (get conf :hostname) port (get conf :port default-port)]
+; simple for now
+(defn create-bot 
+  ([] 
+   (create-bot (create-config)))
+  ([conf] 
+   (struct-map bot :tag       ::Bot
+                   :config    (ref conf)
+                   :socket    (agent (Socket.))
+                   :listeners (ref {})
+                   :channels  (ref {}))))
+
+(defn- inet-sock-address [conf]
+  (let [hostname (get conf :hostname) port (get conf :port)]
     (throw-if (nil? hostname) IllegalArgumentException "hostname must be set for bot")
-    [hostname port]))
- 
-(defmulti connect "connect the bot to its configured server" :tag)
+    (throw-if (nil? port)     IllegalArgumentException "port must be set for bot")
+    (InetSocketAddress. hostname port)))
 
-(defmethod #^{:private true} connect ::Config [conf]
-  (let [[hostname port] (connection-args conf)]
-    (debug (format "hostname: %s, port %d" hostname port))
-    (new Socket hostname port)))
+(defn- connect-sock [socket conf]
+  (.connect socket (inet-sock-address conf))
+  socket)
 
-(defmethod connect ::Bot [b]
-  (assoc b :socket (connect (b :config))))
+(defn- do-login-stuff [bot]
+  )
 
-(defmethod connect :default [a]
-  (throw IllegalArgumentException (str "don't know how to connect " a)))
+(defn connect [bot]
+  (await (send-off (bot :socket) #(connect-sock % @(bot :config))))
+  bot)
 
-
-(defmulti disconnect "disconnect the bot from its server" class)
-
-(defmethod disconnect clojure.lang.PersistentStructMap [b])
+(defn disconnect [bot]
+  (await 
+    (send (bot :socket) 
+          (fn [sock] (let [sock @(bot :socket)] 
+                       (if (and (instance? Socket sock) 
+                                (not (.isClosed sock))) (.close sock)))
+            sock)))
+  bot)
 
