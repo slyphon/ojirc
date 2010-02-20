@@ -44,7 +44,11 @@ task 'start-ng' => :classpath do
   exec(*args)
 end
 
-task 'ngircd' do
+task :ng => 'start-ng'
+
+task :ngircd do
   sh "ngircd -f config/ngircd.conf --nodaemon --passive"
 end
+
+task :ircd => :ngircd
 

@@ -8,8 +8,9 @@
      [clojure.contrib.logging]
      [clojure.contrib.seq-utils     :only (flatten)]))
 
-
-(def *kill-token* ::KILL-YOURSELF)
+(defonce *kill-token* ::KILL-YOURSELF)
+(defonce *CRLF* "\r\n")
+(defonce *bot-version* "ojbot-0.0.1")
 
 (def config-defaults 
   {:tag ::Config
@@ -21,9 +22,9 @@
 
 
 (defstruct message    :tag :type :channel :sender :login :hostname :message :target :action)
-(defstruct config     :tag :hostname :port :nick :login :finger)
+(defstruct config     :tag :hostname :hostpass :port :nick :login :finger)
 (defstruct bot-struct :tag :config :socket :listeners :channels)
-(defstruct net-state  :tag :socket :outq :writer :reader)
+(defstruct net-state  :tag :socket :outq :outq-fill :writer :reader)
 
 (defn bot? [x]
   (and (map? x)
@@ -44,13 +45,13 @@
   ([& kvpairs] 
    (struct-hash-map config (merge config-defaults (apply hash-map kvpairs)))))
 
-
 (defn create-net-state []
   (let [sock (Socket.) lbq (LinkedBlockingQueue.)]
     (struct-map net-state 
                 :tag        ::NetState
                 :connected  (atom false)
                 :socket     (atom sock)
+                :local-addr (atom nil)
                 :outq       lbq 
                 :writer     (atom nil)
                 :reader     (atom nil)
@@ -79,15 +80,28 @@
   (.connect socket (inet-sock-address conf))
   socket)
 
-(defn- output-loop [{wrtr :writer :keys [outq] :as net}]
-  (binding [*out* wrtr]
-    (loop []
-      (let [line (.take outq)]
-        (if (= line *kill-token*)
-          :finished
-          (do (println line)
-              (recur)))))))
+; takes a j.u.c.BlockingQueue and turns it into a lazy seq. if the
+; token pulled off the queue is the *kill-token*, then the seq ends
+(defn- lazify-q [q]
+  (take-while #(not= *kill-token* %) (repeatedly #(.take q))))
 
+(defn- output-loop [{wrtr :writer :keys [outq] :as net}]
+  (binding [*out* @wrtr]
+    (doseq [line (lazify-q outq)]
+      ; XXX: trim lines that are over-length
+      ; (if (> (.length line) clojbot.input/*max-line-length*)
+      (print (str line *CRLF*))
+      (flush)
+      (debug (str ">>> " line)))))
+
+
+(defn send-lines [{{:keys [outq]} :net :as bot} & lines]
+  (doseq [line lines] (.put outq line)))
+
+(defn- handle-login [{:keys [hostpass nick login finger]} bot]
+  (when-not (nil? hostpass) (send-lines (str "PASS " hostpass)))
+  (send-lines bot (str "NICK " nick)
+                  (str "USER " login " 8 * :" *bot-version*)))
 
 (defn connect [{:keys [net config] :as bot}]
   (let [socket (net :socket)]
@@ -96,7 +110,9 @@
     (reset! (net :connected) true)
     (reset! (net :reader) (reader @socket))
     (reset! (net :writer) (writer @socket))
+    (reset! (net :local-addr) (.getLocalAddress @socket))
     (reset! (net :out-future) (future (output-loop net))))
+  (handle-login config bot)
   bot)
 
 (defn- disconnect-sock [sock]
@@ -119,4 +135,8 @@
   (reset! (net :connected) false)
   bot)
 
+(defn mainloop 
+  "iterates over reponses from the server in a loop and takes care of dispatching
+  the resulting messages"
+  ([{{:keys [reader] :as net} :net :as bot}] ))
 
