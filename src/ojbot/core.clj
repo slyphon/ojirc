@@ -3,8 +3,10 @@
      [java.net Socket InetSocketAddress]
      [java.util.concurrent LinkedBlockingQueue])
   (:use 
+     [ojbot.input]
      [clojure.contrib.except        :only (throw-if)]
      [clojure.contrib.duck-streams  :only (reader writer)]
+     [clojure.contrib.str-utils     :only (re-split)]
      [clojure.contrib.logging]
      [clojure.contrib.seq-utils     :only (flatten)]))
 
@@ -16,8 +18,8 @@
   {:tag ::Config
    :hostname "localhost" 
    :port 6667
-   :nick "clojbot"
-   :login "clojbot"
+   :nick "ojbot"
+   :login "ojbot"
    :finger "don't finger me!"})
 
 
@@ -29,6 +31,10 @@
 (defn bot? [x]
   (and (map? x)
        (= (x :tag) ::Bot)))
+
+(defn connected? [{:keys [net] :as bot}]
+  (@net :connected))
+
 
 (defn closed? [sock]
   (.isClosed sock))
@@ -49,14 +55,14 @@
   (let [sock (Socket.) lbq (LinkedBlockingQueue.)]
     (struct-map net-state 
                 :tag        ::NetState
-                :connected  (atom false)
-                :socket     (atom sock)
-                :local-addr (atom nil)
+                :connected  (ref false)
+                :socket     (ref sock)
+                :local-addr (ref nil)
                 :outq       lbq 
-                :writer     (atom nil)
-                :reader     (atom nil)
-                :out-future (atom nil)
-                :in-future  (atom nil)))) 
+                :writer     (ref nil)
+                :reader     (ref nil)
+                :out-future (ref nil)
+                :in-future  (ref nil))))
 
 
 ; simple for now
@@ -77,7 +83,8 @@
   (InetSocketAddress. hostname port))
 
 (defn- connect-sock [socket conf]
-  (.connect socket (inet-sock-address conf))
+  (locking socket
+    (.connect socket (inet-sock-address conf)))
   socket)
 
 ; takes a j.u.c.BlockingQueue and turns it into a lazy seq. if the
@@ -85,42 +92,65 @@
 (defn- lazify-q [q]
   (take-while #(not= *kill-token* %) (repeatedly #(.take q))))
 
+(defn- trim-line [line]
+  (let [maxlen (- ojbot.input/*max-line-length* 2)]
+  (if (> (.length line) maxlen)
+    (.substring line 0 maxlen)
+    line)))
+
 (defn- output-loop [{wrtr :writer :keys [outq] :as net}]
   (binding [*out* @wrtr]
     (doseq [line (lazify-q outq)]
-      ; XXX: trim lines that are over-length
-      ; (if (> (.length line) clojbot.input/*max-line-length*)
-      (print (str line *CRLF*))
+      (print (str (trim-line line) *CRLF*))
       (flush)
       (debug (str ">>> " line)))))
-
 
 (defn send-lines [{{:keys [outq]} :net :as bot} & lines]
   (doseq [line lines] (.put outq line)))
 
-(defn- handle-login [{:keys [hostpass nick login finger]} bot]
+(defn- split-spaces [s] (re-split #" " s))
+
+(defn- handle-login [{:keys [hostpass nick login finger] :as config} {:keys [net] :as bot}]
   (when-not (nil? hostpass) (send-lines (str "PASS " hostpass)))
   (send-lines bot (str "NICK " nick)
-                  (str "USER " login " 8 * :" *bot-version*)))
+                  (str "USER " login " 8 * :" *bot-version*))
+
+  (let [r @(net :reader)]
+    (debug (str "reader: " r))
+    (loop [line (.readLine r)]
+      (info (str "<<< " line))
+      (let [[prefix code & more] (split-spaces line)]
+        (cond
+          (= code "004") true
+          (= code "433") (throw RuntimeException "nick already in use")
+          true (recur (.readLine r)))))))
 
 (defn connect [{:keys [net config] :as bot}]
-  (let [socket (net :socket)]
-    (debug (str "_net_ " net " _config_ " config " _socket_ " @socket))
-    (connect-sock @socket @config)
-    (reset! (net :connected) true)
-    (reset! (net :reader) (reader @socket))
-    (reset! (net :writer) (writer @socket))
-    (reset! (net :local-addr) (.getLocalAddress @socket))
-    (reset! (net :out-future) (future (output-loop net))))
-  (handle-login config bot)
+  (debug (str "net: " net " config " config))
+  (dosync
+    (let [{:keys [socket connected local-addr out-future]} net
+          {rdr :reader wrtr :writer} net]
+      (connect-sock @socket @config)
+      (ref-set connected  true)
+      (ref-set rdr        (reader @socket))
+      (ref-set wrtr       (writer @socket))
+      (ref-set local-addr (.getLocalAddress @socket))
+      (ref-set out-future (future (output-loop net)))))
+  ; pircbot handles the login chat before starting the input/output threads
+  ; we start the output thread before
+  (handle-login @config bot) 
   bot)
 
 (defn- disconnect-sock [sock]
-  (if (and (instance? Socket sock) 
-              (not (.isClosed sock))) 
-        (do
-          (debug (str "disconnecting sock: " sock))
-          (.close sock))))
+  (debug (str "socket: " sock))
+  (when-not (nil? sock)
+    (locking sock
+      (if (and (instance? Socket sock)
+                  (not (.isClosed sock)))
+            (do
+              (debug (str "disconnecting sock: " sock))
+              (.close sock)))))
+  sock)
 
 (defn- stop-outputter [{:keys [outq out-future]}]
   (doto outq
@@ -128,15 +158,24 @@
     (.put *kill-token*))
   @out-future)  ; wait for future to stop
 
-(defn disconnect [{net :net sock @(net :socket) :as bot}]
-  (disconnect-sock sock)
-  (stop-outputter net)
-  (reset! (net :socket) nil)
-  (reset! (net :connected) false)
+(defn disconnect [{:keys [net] :as bot}]
+  (dosync
+    (let [{:keys [socket connected local-addr out-future outq]} net
+          {rdr :reader wrtr :writer} net]
+      (debug (str "disconnect sock: " @socket))
+
+      (disconnect-sock @socket)
+      (stop-outputter net)
+
+      (.close  @rdr)
+      (.close  @wrtr)
+      (.clear  outq)
+      (ref-set rdr        nil)
+      (ref-set wrtr       nil)
+      (ref-set socket     (Socket.))
+      (ref-set local-addr nil)
+      (ref-set connected  false)))
   bot)
 
-(defn mainloop 
-  "iterates over reponses from the server in a loop and takes care of dispatching
-  the resulting messages"
-  ([{{:keys [reader] :as net} :net :as bot}] ))
+     
 

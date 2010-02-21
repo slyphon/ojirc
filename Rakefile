@@ -4,6 +4,8 @@ def _ep(path)
   File.expand_path(path)
 end
 
+JLINE_JAR = FileList['lib/jline-*.jar'].first
+
 LIBS = FileList[_ep('src'), _ep('book'), 'lib/**/*.jar']
 
 LOG4J_PROPERITES = 'lib/log4j.properties'
@@ -45,6 +47,13 @@ task 'start-ng' => :classpath do
 end
 
 task :ng => 'start-ng'
+
+task :jline => :classpath do
+  args = ['java', ENV['CLOJURE_OPTS'], log4j_props, 'jline.ConsoleRunner', 'clojure.main']
+  args.compact!
+  $stderr.puts "running: #{args.compact.join(' ')}"
+  exec(*args)
+end
 
 task :ngircd do
   sh "ngircd -f config/ngircd.conf --nodaemon --passive"
