@@ -1,5 +1,3 @@
 (ns ojbot
-  (:use 
-     [ojbot.input]
-     [ojbot.core]))
+  (:require (ojbot input core responses)))
 

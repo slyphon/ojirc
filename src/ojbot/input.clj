@@ -7,11 +7,15 @@
 
 (defonce *max-line-length* 512)
 
+(defn- prefix? [s]
+  (.startsWith s ":"))
+
 (defn handle-line
   "parses the responses from the server and returns the appropriate
    message struct "
   ([line]
-   (info (str "<<< " line))))
+
+   ))
 
 
 (defn mainloop 
@@ -25,7 +29,7 @@
       (if (not (nil? line))
         (do
           (info (str "<<< " line))
-          (ojbot.input/handle-line line)
+          (handle-line line)
           (recur (.readline r)))
         ;; XXX: Handle disconnect case here!
         ))))
