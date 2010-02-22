@@ -2,8 +2,8 @@
   (:use
      [clojure.contrib.except        :only (throw-if)]
      [clojure.contrib.logging]
-     [clojure.contrib.seq-utils     :only (flatten)]))
-
+     [clojure.contrib.seq-utils     :only (flatten)]
+     [ojbot.responses               :only (REPLY_CODE CODE_REPLY)]))
 
 (defonce *max-line-length* 512)
 
