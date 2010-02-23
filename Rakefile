@@ -61,3 +61,9 @@ end
 
 task :ircd => :ngircd
 
+file DEV_SCREEN_CONFIG = 'config/ojbot-dev.screen'
+
+task :screen => DEV_SCREEN_CONFIG do
+  exec "screen -c #{DEV_SCREEN_CONFIG}"
+end
+
