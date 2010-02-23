@@ -12,6 +12,7 @@
 
 (defstruct nick-info-struct       :tag :nick :login :hostname)
 (defstruct client-message-struct  :tag :nick-info :command :params)
+(defstruct server-message-struct  :tag :source-host :code :cmd-sym :target :param-str)
 
 (defn parse-nick-info 
   "parses a nick-info string in the form ':nick!~login@hostname' and returns a
@@ -33,15 +34,47 @@
                 :command    command
                 :params     params)))
 
-;(defn- parse-server-command [
 
-(defn parse-command
-  "splits a line received from the server into the nick-info-string, the 
-  command proper, and any params the command might have"
-  [s]
-  (let [[_ nick-str cmd-str trailing] (first (re-seq #"^:([^:]+):(.*)$" s))]
-    (if nick-str
-      (parse-client-command nick-str cmd-str trailing))))
+(defn- command-type [s]
+  (condp re-find s
+    #"^:([^ ]+) \\d+" ::ServerMessage   ; XXX: this is incorrect, 
+                                        ; doesn't handle non-numeric server messages
+    #"^:([^ ]+)!"     ::ClientMessage
+    nil))
+
+
+(defmulti parse-command command-type)
+
+; XXX: this doesn't handle non-numeric server responses
+(defmethod parse-command ::ServerMessage [line]
+  (let [[_ source code-str target param-str] (re-find #"^:([^ ]+) (\d+) ([^ ]+) (.*)$" line)
+        code    (Integer/decode code-str)
+        cmd-kw  (CODE_REPLY code)]
+
+    (struct-map server-message-struct
+                :tag  ::ServerMessage
+                :source-host  source
+                :code         code
+                :cmd-keyword  cmd-kw
+                :target       target
+                :param-str    param-str)))
+    
+; XXX: continue here
+(defmethod parse-command ::ClientMessage [line]
+  (let [[_ source cmd-str param-str trailing] (re-find #"^:([^ ]+) ([^ ]+) (.*)$")]))
+
+
+;(defn parse-command*
+;  "splits a line received from the server into the nick-info-string, the 
+;  command proper, and any params the command might have and returns a struct of
+;  the correct format"
+;  [s]
+;  (let [[_ nick-str cmd-str trailing] (first (re-seq #"^:([^:]+):(.*)$" s))]
+;    (condp re-find s
+;      #"^:([^ ]+) \\d+" (parse-client-command nick-str cmd-str trailing)
+;      #"^:([^ ]+)!"     (parse-server-command nick-str cmd-str trailing)
+;      ;; XXX: handle fallthrough here!
+;)))
 
 
 (defn- prefix? [s]
@@ -69,17 +102,14 @@
           (rpl-code= :ERR_NICKNAMEINUSE code) (do-auto-nick-change config bot) 
           true (recur (.readLine r)))))))
 
-(defn parse-line 
-  "parses the responses from the server and returns the appropriate
-   message struct "
-  ([line]
-    (let [[sender-info command] (take 2 (split-spaces line))
-          nick-info (parse-nick-info sender-info)]
-;      (if nick-info
-
-
-    
-   )))
+;(defn parse-line 
+;  "parses the responses from the server and returns the appropriate
+;   message struct "
+;  ([line]
+;    (let [[sender-info command] (take 2 (split-spaces line))
+;          nick-info (parse-nick-info sender-info)]
+;    
+;   )))
 
 (defn mainloop 
   "iterates over reponses from the server in a loop and takes care of dispatching
