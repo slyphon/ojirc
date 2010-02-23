@@ -10,6 +10,40 @@
      [ojbot.common     :only (*CRLF* split-spaces)]
      [ojbot.responses  :only (REPLY_CODE CODE_REPLY rpl-code=)]))
 
+(defstruct nick-info-struct       :tag :nick :login :hostname)
+(defstruct client-message-struct  :tag :nick-info :command :params)
+
+(defn parse-nick-info 
+  "parses a nick-info string in the form ':nick!~login@hostname' and returns a
+  nick-info-struct with the appropriate values set returns nil if the string doesn't
+  fit the pattern"
+  [s]
+  (let [[_ nick login host] (first (re-seq #"^:([^ ]+)!~([^ ]+)@([^ ]+)" s))]
+    (if (nil? nick)
+      nil
+      (struct nick-info-struct ::NickInfo nick login host))))
+
+(defn- parse-client-command [nick-str cmd-str trailing]
+  (let [[command & params] (split-spaces cmd-str)
+        params             (conj (vec params) trailing)
+        command            (.toUpperCase command)]
+    (struct-map client-message-struct
+                :tag        ::ClientMessage
+                :nick-info  (parse-nick-info nick-str)
+                :command    command
+                :params     params)))
+
+;(defn- parse-server-command [
+
+(defn parse-command
+  "splits a line received from the server into the nick-info-string, the 
+  command proper, and any params the command might have"
+  [s]
+  (let [[_ nick-str cmd-str trailing] (first (re-seq #"^:([^:]+):(.*)$" s))]
+    (if nick-str
+      (parse-client-command nick-str cmd-str trailing))))
+
+
 (defn- prefix? [s]
   (.startsWith s ":"))
 
@@ -35,12 +69,17 @@
           (rpl-code= :ERR_NICKNAMEINUSE code) (do-auto-nick-change config bot) 
           true (recur (.readLine r)))))))
 
-(defn handle-line
+(defn parse-line 
   "parses the responses from the server and returns the appropriate
    message struct "
   ([line]
+    (let [[sender-info command] (take 2 (split-spaces line))
+          nick-info (parse-nick-info sender-info)]
+;      (if nick-info
 
-   ))
+
+    
+   )))
 
 (defn mainloop 
   "iterates over reponses from the server in a loop and takes care of dispatching
@@ -53,7 +92,7 @@
       (if (not (nil? line))
         (do
           (info (str "<<< " line))
-          (handle-line line)
+          (parse-line line)
           (recur (.readline r)))
         ;; XXX: Handle disconnect case here!
         ))))

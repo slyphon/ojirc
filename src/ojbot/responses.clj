@@ -140,7 +140,8 @@
 (defn rpl-code=
   "passed a keyword and an integer, returns true if that keyword is associated
   with that reply code"
-  [kw code] 
-  (= (CODE_REPLY code) kw))
-
+  [kw code]
+  (if (keyword? kw)
+    (= (CODE_REPLY code) kw)
+    (= (REPLY_CODE code) kw)))
 
