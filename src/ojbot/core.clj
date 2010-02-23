@@ -2,17 +2,16 @@
   (:import 
      [java.net Socket InetSocketAddress]
      [java.util.concurrent LinkedBlockingQueue])
+  (:require
+     [ojbot input output])
   (:use 
-     [ojbot.input]
-     [clojure.contrib.except        :only (throw-if)]
      [clojure.contrib.duck-streams  :only (reader writer)]
+     [clojure.contrib.except        :only (throw-if)]
      [clojure.contrib.str-utils     :only (re-split)]
+     [clojure.contrib.seq-utils     :only (flatten)]
      [clojure.contrib.logging]
-     [clojure.contrib.seq-utils     :only (flatten)]))
 
-(defonce *kill-token* ::KILL-YOURSELF)
-(defonce *CRLF* "\r\n")
-(defonce *bot-version* "ojbot-0.0.1")
+     [ojbot common]))
 
 (def config-defaults 
   {:tag ::Config
@@ -21,7 +20,6 @@
    :nick "ojbot"
    :login "ojbot"
    :finger "don't finger me!"})
-
 
 (defstruct message    :tag :type :channel :sender :login :hostname :message :target :action)
 (defstruct config     :tag :hostname :hostpass :port :nick :login :finger)
@@ -87,44 +85,6 @@
     (.connect socket (inet-sock-address conf)))
   socket)
 
-; takes a j.u.c.BlockingQueue and turns it into a lazy seq. if the
-; token pulled off the queue is the *kill-token*, then the seq ends
-(defn- lazify-q [q]
-  (take-while #(not= *kill-token* %) (repeatedly #(.take q))))
-
-(defn- trim-line [line]
-  (let [maxlen (- ojbot.input/*max-line-length* 2)]
-  (if (> (.length line) maxlen)
-    (.substring line 0 maxlen)
-    line)))
-
-(defn- output-loop [{wrtr :writer :keys [outq] :as net}]
-  (binding [*out* @wrtr]
-    (doseq [line (lazify-q outq)]
-      (print (str (trim-line line) *CRLF*))
-      (flush)
-      (debug (str ">>> " line)))))
-
-(defn send-lines [{{:keys [outq]} :net :as bot} & lines]
-  (doseq [line lines] (.put outq line)))
-
-(defn- split-spaces [s] (re-split #" " s))
-
-(defn- handle-login [{:keys [hostpass nick login finger] :as config} {:keys [net] :as bot}]
-  (when-not (nil? hostpass) (send-lines (str "PASS " hostpass)))
-  (send-lines bot (str "NICK " nick)
-                  (str "USER " login " 8 * :" *bot-version*))
-
-  (let [r @(net :reader)]
-    (debug (str "reader: " r))
-    (loop [line (.readLine r)]
-      (info (str "<<< " line))
-      (let [[prefix code & more] (split-spaces line)]
-        (cond
-          (= code "004") true
-          (= code "433") (throw RuntimeException "nick already in use")
-          true (recur (.readLine r)))))))
-
 (defn connect [{:keys [net config] :as bot}]
   (debug (str "net: " net " config " config))
   (dosync
@@ -135,10 +95,10 @@
       (ref-set rdr        (reader @socket))
       (ref-set wrtr       (writer @socket))
       (ref-set local-addr (.getLocalAddress @socket))
-      (ref-set out-future (future (output-loop net)))))
+      (ref-set out-future (future (ojbot.output/output-loop net)))))
   ; pircbot handles the login chat before starting the input/output threads
   ; we start the output thread before
-  (handle-login @config bot) 
+  (ojbot.input/handle-login @config bot) 
   bot)
 
 (defn- disconnect-sock [sock]

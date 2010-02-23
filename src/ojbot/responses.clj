@@ -3,7 +3,45 @@
      [clojure.contrib.except        :only (throw-if)]))
 
 (def REPLY_CODE
-  { :ERR_NOSUCHNICK         401
+  { :RPL_WELCOME              1
+    :RPL_YOURHOST             2
+    :RPL_CREATED              3
+    :RPL_MYINFO               4
+    :RPL_BOUNCE               5
+
+    :RPL_TRACELINK          200
+    :RPL_TRACECONNECTING    201
+    :RPL_TRACEHANDSHAKE     202
+    :RPL_TRACEUNKNOWN       203
+    :RPL_TRACEOPERATOR      204
+    :RPL_TRACEUSER          205
+    :RPL_TRACESERVER        206
+    :RPL_TRACESERVICE       207
+    :RPL_TRACENEWTYPE       208
+    :RPL_TRACECLASS         209
+    :RPL_TRACERECONNECT     210
+    :RPL_TRACELOG           261
+    :RPL_TRACEEND           262
+    :RPL_STATSLINKINFO      211
+    :RPL_STATSCOMMANDS      212
+    :RPL_ENDOFSTATS         219
+    :RPL_STATSUPTIME        242
+    :RPL_STATSOLINE         243
+    :RPL_UMODEIS            221
+    :RPL_SERVLIST           234
+    :RPL_SERVLISTEND        235
+    :RPL_LUSERCLIENT        251
+    :RPL_LUSEROP            252
+    :RPL_LUSERUNKNOWN       253
+    :RPL_LUSERCHANNELS      254
+    :RPL_LUSERME            255
+    :RPL_ADMINME            256
+    :RPL_ADMINLOC1          257
+    :RPL_ADMINLOC2          258
+    :RPL_ADMINEMAIL         259
+    :RPL_TRYAGAIN           263
+
+    :ERR_NOSUCHNICK         401
     :ERR_NOSUCHSERVER       402
     :ERR_NOSUCHCHANNEL      403
     :ERR_CANNOTSENDTOCHAN   404
@@ -89,7 +127,20 @@
     :RPL_USERSSTART         392
     :RPL_USERS              393
     :RPL_ENDOFUSERS         394
-    :RPL_NOUSERS            395 })
+    :RPL_NOUSERS            395
+ })
 
 (def CODE_REPLY (zipmap (vals REPLY_CODE) (keys REPLY_CODE)))
+
+(defn command-rpl? 
+  "From the rfc: Numerics in the range from 001 to 099 are used for client-server
+   connections only and should never travel between servers"
+  [code] (and (code >= 1) (code < 100)))
+
+(defn rpl-code=
+  "passed a keyword and an integer, returns true if that keyword is associated
+  with that reply code"
+  [kw code] 
+  (= (CODE_REPLY code) kw))
+
 

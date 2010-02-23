@@ -1,3 +1,3 @@
 (ns ojbot
-  (:require (ojbot input core responses)))
+  (:require [ojbot common responses output input core]))
 
