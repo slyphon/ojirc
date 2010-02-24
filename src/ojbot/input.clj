@@ -10,16 +10,15 @@
      [ojbot.common     :only (*CRLF* split-spaces)]
      [ojbot.responses  :only (REPLY_CODE CODE_REPLY rpl-code=)]))
 
-(defstruct nick-info-struct       :tag :nick :login :hostname)
-(defstruct client-message-struct  :tag :nick-info   :cmd :target :params)
-(defstruct server-message-struct  :tag :source-host :cmd :target :params)
+(defstruct nick-info-struct   :tag :nick :login :hostname)
+(defstruct message-struct     :tag :source :cmd :target :params)
 
 (defn- parse-params [s]
   "takes a param string, possibly containing a 'trailing' param, and returns a vector
   of the params"
   (let [[_ param-str trailing] (re-find #"^([^:]+)(?:[:](.*))?$" s)
-        params (split-spaces param-str)]
-    (conj (vec params) trailing)))
+        params (vec (split-spaces param-str))]
+    (if trailing (conj params trailing) params)))
 
 (defn- to-i [s]
   (try
@@ -34,52 +33,24 @@
       (keyword (.toUpperCase s)))))
 
 
+(defn create-nick-info-struct 
+  ([nick login host] (struct nick-info-struct ::NickInfo nick login host))
+  ([host] (struct nick-info-struct ::NickInfo nil nil host)))
+
+(defn create-message-struct
+  ([source cmd target params] struct ::Message source cmd target params))
+
 (defn parse-nick-info 
   "parses a nick-info string in the form ':nick!~login@hostname' and returns a
   nick-info-struct with the appropriate values set returns nil if the string doesn't
   fit the pattern"
   [s]
-  (let [[_ nick login host] (first (re-seq #"^:([^ ]+)!~([^ ]+)@([^ ]+)" s))]
-    (if (nil? nick)
-      nil
-      (struct nick-info-struct ::NickInfo nick login host))))
+  (if s
+    (let [[_ nick login host] (re-find #"^(?:([^ ]+)!~([^ ]+)@)?([^ ]+)" s)]
+      (if nick 
+        (create-nick-info-struct nick login host)
+        nil))))
 
-(defn- parse-client-command [s]
-  (let [[_ nick-str cmd-str target param-str] (re-matches #"^:([^ ]+) ([A-Z]+) ([^ ]+) (.*)$")]
-    (if nick-str
-      (struct-map client-message-struct
-                  :tag        ::ClientMessage
-                  :nick-info  (parse-nick-info nick-str)
-                  :cmd        (to-cmd-kw cmd-str)
-                  :target     target
-                  :params     (parse-params param-str))
-      nil))) ; return nil if we couldn't parse the message
-
-(defn- parse-server-command [line]
-  (let [[_ source code-str target param-str] (re-find #"^:([^ ]+) ([0-9A-Z]+) ([^ ]+) (.*)$" line)]
-    (if source
-      (struct-map server-message-struct
-                  :tag          ::ServerMessage
-                  :source-host  source
-                  :cmd          (to-cmd-kw code-str)
-                  :target       target
-                  :params       (parse-params param-str))
-      nil))) ; return nil if we couldn't parse this message
-    
-
-;(defn parse-command*
-;  "splits a line received from the server into the nick-info-string, the 
-;  command proper, and any params the command might have and returns a struct of
-;  the correct format"
-;  [s]
-;  (condp re-find s
-;    #"^:([^ ]+) \d+" (parse-client-command nick-str cmd-str trailing)
-;    #"^:([^ ]+)!"    (parse-server-command nick-str cmd-str trailing)
-;))
-
-
-(defn- prefix? [s]
-  (.startsWith s ":"))
 
 (defn- do-auto-nick-change [{:keys [nick] :as config} bot]
   (dosync (ojbot.output/send-lines (str "NICK " (alter nick #(str % "_"))))))
@@ -103,14 +74,19 @@
           (rpl-code= :ERR_NICKNAMEINUSE code) (do-auto-nick-change config bot) 
           true (recur (.readLine r)))))))
 
-;(defn parse-line 
-;  "parses the responses from the server and returns the appropriate
-;   message struct "
-;  ([line]
-;    (let [[sender-info command] (take 2 (split-spaces line))
-;          nick-info (parse-nick-info sender-info)]
-;    
-;   )))
+
+(defn parse-line 
+  "parses the responses from the server and returns the appropriate
+   message struct "
+  ([line]
+    (let [[_ sender-str cmd-str target param-str] (re-matches #"^:?([^ ]+) ([0-9A-Z]+) ([^ ]+) (.*)$" line)
+          nick-info (and sender-str (parse-nick-info sender-str))
+          cmd       (and cmd-str    (to-cmd-kw cmd-str))
+          params    (and param-str  (parse-params param-str))] 
+      (if sender-info
+        (create-message-struct nick-info cmd target params))
+        ; XXX: return an unrecognized format message struct here
+   )))
 
 (defn mainloop 
   "iterates over reponses from the server in a loop and takes care of dispatching
