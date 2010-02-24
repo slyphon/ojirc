@@ -13,4 +13,9 @@
 (defonce *CRLF* "\r\n")
 (defonce *bot-version* "ojbot-0.0.1")
 
+; takes a j.u.c.BlockingQueue and turns it into a lazy seq. if the
+; token pulled off the queue is the *kill-token*, then the seq ends
+(defn lazify-q [q]
+  (take-while #(not= *kill-token* %) (repeatedly #(.take q))))
+
 

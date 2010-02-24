@@ -50,17 +50,16 @@
    (struct-hash-map config (merge config-defaults (apply hash-map kvpairs)))))
 
 (defn create-net-state []
-  (let [sock (Socket.) lbq (LinkedBlockingQueue.)]
+  (let [sock (Socket.) outq (LinkedBlockingQueue.)]
     (struct-map net-state 
                 :tag        ::NetState
                 :connected  (ref false)
                 :socket     (ref sock)
                 :local-addr (ref nil)
-                :outq       lbq 
+                :outq       outq
                 :writer     (ref nil)
                 :reader     (ref nil)
-                :out-future (ref nil)
-                :in-future  (ref nil))))
+                :out-future (ref nil))))
 
 
 ; simple for now
@@ -69,11 +68,13 @@
    (create-bot (create-config)))
   ([conf] 
    (struct-map bot-struct
-               :tag       ::Bot
-               :config    (ref conf)
-               :net       (create-net-state)
-               :listeners (ref {})
-               :channels  (ref {}))))
+               :tag               ::Bot
+               :config            (ref conf)
+               :net               (create-net-state)
+               :dispatchq         (agent nil)
+               :dispatch-future   (ref   nil)
+               :listeners         (agent {})
+               :channels          (agent {}))))
 
 (defn- inet-sock-address [{:keys [hostname port]}]
   (throw-if (nil? hostname) IllegalArgumentException "hostname must be set for bot")

@@ -4,13 +4,14 @@ zombie kr
 
 screen -t nailgun 0 rake start-ng
 screen -t ngircd  1 rake ngircd
+screen -t tail    2 tail -F $PWD/log/ojbot.log
 
 split
 
 focus top
 select 0
 focus down
-select 1
+select 2
 focus top
 
 # vim:ft=screen:ts=2:sw=2:et
