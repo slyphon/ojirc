@@ -1,6 +1,8 @@
 (ns ojbot.responses
   (:use
-     [clojure.contrib.except        :only (throw-if)]))
+     [clojure.contrib.except  :only (throw-if)]
+     [clojure.set             :only (union)]
+     [ojbot.common            :only (split-spaces)]))
 
 (def REPLY_CODE
   { :RPL_WELCOME              1
@@ -131,6 +133,10 @@
  })
 
 (def CODE_REPLY (zipmap (vals REPLY_CODE) (keys REPLY_CODE)))
+
+(def CTCP_COMMANDS    (apply hash-set (map keyword (split-spaces "VERSION ACTION PING TIME FINGER DCC"))))
+(def REGULAR_COMMANDS (apply hash-set (map keyword (split-spaces "PRIVMSG JOIN PART NICK NOTICE QUIT KICK MODE TOPIC INVITE"))))
+(def COMMANDS         (union CTCP_COMMANDS REGULAR_COMMANDS))
 
 (defn command-rpl? 
   "From the rfc: Numerics in the range from 001 to 099 are used for client-server

@@ -11,8 +11,28 @@
      [ojbot.responses  :only (REPLY_CODE CODE_REPLY rpl-code=)]))
 
 (defstruct nick-info-struct       :tag :nick :login :hostname)
-(defstruct client-message-struct  :tag :nick-info :command :params)
-(defstruct server-message-struct  :tag :source-host :code :cmd-sym :target :param-str)
+(defstruct client-message-struct  :tag :nick-info   :cmd :target :params)
+(defstruct server-message-struct  :tag :source-host :cmd :target :params)
+
+(defn- parse-params [s]
+  "takes a param string, possibly containing a 'trailing' param, and returns a vector
+  of the params"
+  (let [[_ param-str trailing] (re-find #"^([^:]+)(?:[:](.*))?$" s)
+        params (split-spaces param-str)]
+    (conj (vec params) trailing)))
+
+(defn- to-i [s]
+  (try
+    (Integer/parseInt s 10)
+    (catch NumberFormatException _ nil)))
+
+(defn- to-cmd-kw [s]
+  (let [code-int (to-i s)
+        code-kw  (CODE_REPLY code-int)]
+    (if code-int
+      code-kw
+      (keyword (.toUpperCase s)))))
+
 
 (defn parse-nick-info 
   "parses a nick-info string in the form ':nick!~login@hostname' and returns a
@@ -24,57 +44,38 @@
       nil
       (struct nick-info-struct ::NickInfo nick login host))))
 
-(defn- parse-client-command [nick-str cmd-str trailing]
-  (let [[command & params] (split-spaces cmd-str)
-        params             (conj (vec params) trailing)
-        command            (.toUpperCase command)]
-    (struct-map client-message-struct
-                :tag        ::ClientMessage
-                :nick-info  (parse-nick-info nick-str)
-                :command    command
-                :params     params)))
+(defn- parse-client-command [s]
+  (let [[_ nick-str cmd-str target param-str] (re-matches #"^:([^ ]+) ([A-Z]+) ([^ ]+) (.*)$")]
+    (if nick-str
+      (struct-map client-message-struct
+                  :tag        ::ClientMessage
+                  :nick-info  (parse-nick-info nick-str)
+                  :cmd        (to-cmd-kw cmd-str)
+                  :target     target
+                  :params     (parse-params param-str))
+      nil))) ; return nil if we couldn't parse the message
 
-
-(defn- command-type [s]
-  (condp re-find s
-    #"^:([^ ]+) \\d+" ::ServerMessage   ; XXX: this is incorrect, 
-                                        ; doesn't handle non-numeric server messages
-    #"^:([^ ]+)!"     ::ClientMessage
-    nil))
-
-
-(defmulti parse-command command-type)
-
-; XXX: this doesn't handle non-numeric server responses
-(defmethod parse-command ::ServerMessage [line]
-  (let [[_ source code-str target param-str] (re-find #"^:([^ ]+) (\d+) ([^ ]+) (.*)$" line)
-        code    (Integer/decode code-str)
-        cmd-kw  (CODE_REPLY code)]
-
-    (struct-map server-message-struct
-                :tag  ::ServerMessage
-                :source-host  source
-                :code         code
-                :cmd-keyword  cmd-kw
-                :target       target
-                :param-str    param-str)))
+(defn- parse-server-command [line]
+  (let [[_ source code-str target param-str] (re-find #"^:([^ ]+) ([0-9A-Z]+) ([^ ]+) (.*)$" line)]
+    (if source
+      (struct-map server-message-struct
+                  :tag          ::ServerMessage
+                  :source-host  source
+                  :cmd          (to-cmd-kw code-str)
+                  :target       target
+                  :params       (parse-params param-str))
+      nil))) ; return nil if we couldn't parse this message
     
-; XXX: continue here
-(defmethod parse-command ::ClientMessage [line]
-  (let [[_ source cmd-str param-str trailing] (re-find #"^:([^ ]+) ([^ ]+) (.*)$")]))
-
 
 ;(defn parse-command*
 ;  "splits a line received from the server into the nick-info-string, the 
 ;  command proper, and any params the command might have and returns a struct of
 ;  the correct format"
 ;  [s]
-;  (let [[_ nick-str cmd-str trailing] (first (re-seq #"^:([^:]+):(.*)$" s))]
-;    (condp re-find s
-;      #"^:([^ ]+) \\d+" (parse-client-command nick-str cmd-str trailing)
-;      #"^:([^ ]+)!"     (parse-server-command nick-str cmd-str trailing)
-;      ;; XXX: handle fallthrough here!
-;)))
+;  (condp re-find s
+;    #"^:([^ ]+) \d+" (parse-client-command nick-str cmd-str trailing)
+;    #"^:([^ ]+)!"    (parse-server-command nick-str cmd-str trailing)
+;))
 
 
 (defn- prefix? [s]
@@ -122,7 +123,7 @@
       (if (not (nil? line))
         (do
           (info (str "<<< " line))
-          (parse-line line)
+;          (parse-line line)
           (recur (.readline r)))
         ;; XXX: Handle disconnect case here!
         ))))
