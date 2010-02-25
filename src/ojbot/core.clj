@@ -88,7 +88,7 @@
 (defn connect [{:keys [net config] :as bot}]
   (debug (str "net: " net " config " config))
   (dosync
-    (let [{:keys [socket connected local-addr out-future]} net
+    (let [{:keys [socket connected local-addr out-future dispatch-future]} net
           {rdr :reader wrtr :writer} net]
       (connect-sock @socket @config)
       (ref-set connected        true)

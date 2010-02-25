@@ -3,6 +3,6 @@
      [clojure.stacktrace]
      [clojure.contrib.repl-utils]
      [clojure.contrib.pprint :only (pprint pp)]
-     [clojure.contrib.condition :only (print-stack-trace)]
+     [clojure.stacktrace :only (print-cause-trace)]
      [ojbot core])) 
 
