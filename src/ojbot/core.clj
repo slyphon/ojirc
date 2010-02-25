@@ -61,20 +61,19 @@
                 :reader     (ref nil)
                 :out-future (ref nil))))
 
-
-; simple for now
 (defn create-bot 
   ([] 
    (create-bot (create-config)))
   ([conf] 
-   (struct-map bot-struct
-               :tag               ::Bot
-               :config            (ref conf)
-               :net               (create-net-state)
-               :dispatchq         (agent nil)
-               :dispatch-future   (ref   nil)
-               :listeners         (agent {})
-               :channels          (agent {}))))
+   (let [dispatchq (LinkedBlockingQueue.)]
+    (struct-map bot-struct
+                :tag               ::Bot
+                :config            (ref conf)
+                :net               (create-net-state)
+                :dispatchq         (agent dispatchq)
+                :dispatch-future   (ref   nil)
+                :listeners         (agent {})
+                :channels          (agent {})))))
 
 (defn- inet-sock-address [{:keys [hostname port]}]
   (throw-if (nil? hostname) IllegalArgumentException "hostname must be set for bot")
@@ -92,11 +91,13 @@
     (let [{:keys [socket connected local-addr out-future]} net
           {rdr :reader wrtr :writer} net]
       (connect-sock @socket @config)
-      (ref-set connected  true)
-      (ref-set rdr        (reader @socket))
-      (ref-set wrtr       (writer @socket))
-      (ref-set local-addr (.getLocalAddress @socket))
-      (ref-set out-future (future (ojbot.output/output-loop net)))))
+      (ref-set connected        true)
+      (ref-set rdr              (reader @socket))
+      (ref-set wrtr             (writer @socket))
+      (ref-set local-addr       (.getLocalAddress @socket))
+      (ref-set out-future       (future (ojbot.output/output-loop net)))
+      (ref-set dispatch-future  (future (ojbot.dispatch/dispatch-loop bot) ))))
+
   ; pircbot handles the login chat before starting the input/output threads
   ; we start the output thread before
   (ojbot.input/handle-login @config bot) 
@@ -138,5 +139,4 @@
       (ref-set connected  false)))
   bot)
 
-     
 
