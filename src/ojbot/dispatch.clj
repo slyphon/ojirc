@@ -9,11 +9,44 @@
 )
 
 
-(defmulti dispatch (fn [bot {:keys [tag cmd] :as msg}] [tag cmd]))
+(defmulti dispatch (fn [bot {:keys [tag cmd ctcp-cmd] :as msg}] [tag cmd ctcp-cmd]))
 
-(defmethod dispatch [::input/Message :PRIVMSG] [bot msg])
-(defmethod dispatch [::input/Message :PING] [bot msg])
+; CTCP protocol is embeddeed in PRIVMSG commands (yeah, thanks)
 
+(defmethod dispatch [::input/Message :PRIVMSG nil]
+  "a non-CTCP PRIVMSG"
+  [bot msg])
+
+(defmethod dispatch [::input/Message :PRIVMSG :ACTION] 
+  "A CTCP ACTION request"
+  [bot msg])
+
+(defmethod dispatch [::input/Message :PRIVMSG :PING]
+ "a CTCP PING request" 
+ [bot msg])
+
+(defmethod dispatch [::input/Message :PRIVMSG :TIME] 
+  "a CTCP TIME request"
+  [bot msg])
+
+(defmethod dispatch [::input/Message :PRIVMSG :FINGER] 
+  "a CTCP FINGER request"
+  [bot msg])
+
+(defmethod dispatch [::input/Message :PING nil]   [bot msg])
+(defmethod dispatch [::input/Message :JOIN nil]   [bot msg])
+(defmethod dispatch [::input/Message :PART nil]   [bot msg])
+(defmethod dispatch [::input/Message :NICK nil]   [bot msg])
+(defmethod dispatch [::input/Message :QUIT nil]   [bot msg])
+(defmethod dispatch [::input/Message :KICK nil]   [bot msg])
+(defmethod dispatch [::input/Message :MODE nil]   [bot msg])
+(defmethod dispatch [::input/Message :TOPIC nil]  [bot msg])
+(defmethod dispatch [::input/Message :NOTICE nil] [bot msg])
+(defmethod dispatch [::input/Message :INVITE nil] [bot msg])
+
+(defmethod dispatch [::input/UnparseableMessage nil nil] [bot msg])
+
+(defmethod dispatch :default [bot msg])
 
 (defn dispatch-msgs [{:keys [dispatchq] :as bot} & messages]
   "add messages to bot's dispatch queue"

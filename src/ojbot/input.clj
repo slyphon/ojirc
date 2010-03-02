@@ -44,7 +44,7 @@
   [#^String s]
   (let [[_ command params] (re-find RE-CTCP s)]
     (when command
-      { :ctcp-cmd command :ctcp-params (if params (vec (split-spaces params)))} )))
+      { :ctcp-cmd (keyword command) :ctcp-params (if params (vec (split-spaces params)))} )))
 
 (defn parse-leading-params [s]
   (let [ntp (rest (re-find #"^([^:]+):?" s))]
