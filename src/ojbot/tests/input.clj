@@ -18,6 +18,16 @@
   (is (= (parse-leading-params ":only trailing params") []))
   (is (= (parse-leading-params "mixed :with trailing") ["mixed"])))
 
+(let [ctcp-str      ":VERSION ctcpparam"
+      command       "PRIVMSG"
+      ctcp-cmd      "VERSION"
+      ctcp-params   ["ctcpparam"]
+      rval          (input/create-params-struct ctcp-str)]
+
+  (deftest test-create-params-struct-with-ctcp-command
+           (is (= (:ctcp-cmd rval)    ctcp-cmd))
+           (is (= (:ctcp-params rval) ctcp-params))))
+
 (let [server-nick-str "verne.freenode.net"
       server-nick-info (struct-map nick-info-struct 
                                    :tag ::input/NickInfo
@@ -32,7 +42,7 @@
                          :tag       ::input/Params
                          :leading   []
                          :trailing  "this is trailing"
-                         :all       ["this is trailing"])]
+                         :all       ["this is trailing"]) ]
 
   (deftest test-parse-nick-info
     (is (= (parse-nick-info server-nick-str) server-nick-info)

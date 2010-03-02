@@ -3,7 +3,7 @@
      [java.net Socket InetSocketAddress]
      [java.util.concurrent LinkedBlockingQueue])
   (:require
-     [ojbot input output])
+     [ojbot input output dispatch])
   (:use 
      [clojure.contrib.duck-streams  :only (reader writer)]
      [clojure.contrib.except        :only (throw-if)]

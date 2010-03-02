@@ -10,12 +10,17 @@
      [ojbot.common     :only (*CRLF* split-spaces)]
      [ojbot.responses  :only (REPLY_CODE CODE_REPLY rpl-code=)]))
 
-(defstruct nick-info-struct   :tag :nick :login :hostname)
-(defstruct message-struct     :tag :source :cmd :target :params :raw-msg)
-(defstruct params-struct      :tag :leading :trailing :all)
+(def RE-CTCP #"\0001([A-Z]+)(?: ?([^\u0001]+))?\u0001")
+
+(defstruct nick-info-struct     :tag :nick :login :hostname)
+(defstruct message-struct       :tag :source :cmd :target :params :raw-msg)
+(defstruct params-struct        :tag :leading :trailing :all :ctcp-cmd :ctcp-params)
+
 
 ; (re-matches #"^([^:]+)?(?:[:](.*))?$" s)
 
+;; ctcp-params?
+;;
 (defmulti ctcp-params? 
   "returns true if the params are in CTCP format"
 
@@ -33,6 +38,13 @@
 (defmethod ctcp-params? :default [arg]
   (throw (RuntimeException. (str "don't know how to determine if " (pr-str arg) " is a ctcp message"))))
 
+(defn extract-ctcp-params 
+  "given a string with an embedded ^ACTCP-TAG ARG1 ARG2^A, returns a map
+  of { :ctcp-cmd CTCP-TAG :ctcp-args [ARG1 ARG2] }"
+  [#^String s]
+  (let [[_ command params] (re-find RE-CTCP s)]
+    (when command
+      { :ctcp-cmd command :ctcp-params (if params (vec (split-spaces params)))} )))
 
 (defn parse-leading-params [s]
   (let [ntp (rest (re-find #"^([^:]+):?" s))]
@@ -43,16 +55,19 @@
 
 (defn create-params-struct
   "takes a param string, possibly containing a 'trailing' param, and returns a params-struct"
-
   ([#^String s] 
    (let [leading  (parse-leading-params s)
          trailing (parse-trailing-params s)
-         all      (conj leading trailing)]
-     (struct-map params-struct 
-                 :tag       ::Params 
-                 :leading   leading
-                 :trailing  trailing
-                 :all       all))))
+         all      (conj leading trailing)
+         rval     (struct-map params-struct 
+                              :tag       ::Params 
+                              :leading   leading
+                              :trailing  trailing
+                              :all       all)]
+
+     (if (ctcp-params? trailing) 
+       (merge rval (extract-ctcp-params trailing))
+       rval))))
 
 (defn- to-i [s]
   (try
@@ -121,12 +136,12 @@
     (let [[_ sender-str cmd-str target param-str] (re-matches #"^:?([^ ]+) ([0-9A-Z]+) ([^ ]+) (.*)$" line)] 
       (spy (prn-str sender-str cmd-str target param-str))
       (if sender-str
-
         (let [nick-info (parse-nick-info sender-str)
               cmd-kw    (to-cmd-kw cmd-str)
               params    (create-params-struct param-str)]
           (spy (create-message-struct nick-info cmd-kw target params line)))
 
+        ; else
         (create-message-struct line)))))
 
 (defn mainloop 
