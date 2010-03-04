@@ -153,11 +153,10 @@
   (let [r @(:reader net)]
     (debug (str "reader: " r))
     (loop [line (.readLine r)]
-      (if (not (nil? line))
-        (do
-          (info (str "<<< " line))
-          (parse-line line)
-          (recur (.readline r)))
+      (when line
+        (info (str "<<< " line))
+        (parse-line line)
+        (recur (.readline r))
         ;; XXX: Handle disconnect case here!
         ))))
  

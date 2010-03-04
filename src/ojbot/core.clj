@@ -21,7 +21,6 @@
    :login "ojbot"
    :finger "don't finger me!"})
 
-(defstruct message    :tag :type :channel :sender :login :hostname :message :target :action)
 (defstruct config     :tag :hostname :hostpass :port :nick :login :finger)
 (defstruct bot-struct :tag :config :socket :listeners :channels)
 (defstruct net-state  :tag :socket :outq :outq-fill :writer :reader)
@@ -50,7 +49,8 @@
    (struct-hash-map config (merge config-defaults (apply hash-map kvpairs)))))
 
 (defn create-net-state []
-  (let [sock (Socket.) outq (LinkedBlockingQueue.)]
+  (let [sock (Socket.) 
+        outq (LinkedBlockingQueue.)]
     (struct-map net-state 
                 :tag        ::NetState
                 :connected  (ref false)
@@ -81,37 +81,39 @@
   (InetSocketAddress. hostname port))
 
 (defn- connect-sock [socket conf]
-  (locking socket
-    (.connect socket (inet-sock-address conf)))
-  socket)
+  (.connect socket (inet-sock-address conf)))
 
 (defn connect [{:keys [net config] :as bot}]
   (debug (str "net: " net " config " config))
-  (dosync
-    (let [{:keys [socket connected local-addr out-future dispatch-future]} net
-          {rdr :reader wrtr :writer} net]
+  (let [socket (net :socket)]
+    (locking @socket
       (connect-sock @socket @config)
-      (ref-set connected        true)
-      (ref-set rdr              (reader @socket))
-      (ref-set wrtr             (writer @socket))
-      (ref-set local-addr       (.getLocalAddress @socket))
-      (ref-set out-future       (future (ojbot.output/output-loop net)))
-      (ref-set dispatch-future  (future (ojbot.dispatch/dispatch-loop bot) ))))
+      (let [rdr               (reader @socket)
+            wrtr              (writer @socket)
+            local-addr        (.getLocalAddress @socket)
+            out-future        (future (ojbot.output/output-loop net))
+            dispatch-future   (future (ojbot.dispatch/dispatch-loop bot))]
 
-  ; pircbot handles the login chat before starting the input/output threads
-  ; we start the output thread before
-  (ojbot.input/handle-login @config bot) 
+        (dosync
+          (ref-set (net :connected)       true)
+          (ref-set (net :reader)          (reader @socket))
+          (ref-set (net :writer)          (writer @socket))
+          (ref-set (net :local-addr)      local-addr)
+          (ref-set (net :out-future)      out-future)
+          (ref-set (net :dispatch-future) dispatch-future)))
+
+        ; pircbot handles the login chat before starting the input/output threads
+        ; we start the output thread before
+        (ojbot.input/handle-login @config bot)))
   bot)
 
 (defn- disconnect-sock [sock]
   (debug (str "socket: " sock))
-  (when-not (nil? sock)
+  (when sock
     (locking sock
-      (if (and (instance? Socket sock)
-                  (not (.isClosed sock)))
-            (do
-              (debug (str "disconnecting sock: " sock))
-              (.close sock)))))
+      (when (and (instance? Socket sock) (not (.isClosed sock)))
+        (debug (str "disconnecting sock: " sock))
+        (.close sock))))
   sock)
 
 (defn- stop-outputter [{:keys [outq out-future]}]

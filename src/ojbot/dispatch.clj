@@ -8,29 +8,36 @@
      [ojbot.input :as input])
 )
 
+(defn update-listeners-hash [cur-hash msg-selector f]
+  (when-not (contains? cur-hash msg-selector)
+    ; add the key to cur-hash and recurse to add the fn
+    (update-listeners-hash (merge cur-hash {msg-selector []}) msg-selector f))
+  (let [callbacks (cur-hash msg-selector)]
+    (merge cur-hash {msg-selector (conj callbacks f)})))
+
+(defn add-listener 
+  "add a callback function that will receive messages that match msg-selector.
+  clients should generally prefer one of the add-MSGTYPE-listener macros"
+  [{:keys [listeners] :as bot} msg-selector f]
+  (send listeners update-listeners-hash msg-selector f))
 
 (defmulti dispatch (fn [bot {:keys [tag cmd ctcp-cmd] :as msg}] [tag cmd ctcp-cmd]))
 
 ; CTCP protocol is embeddeed in PRIVMSG commands (yeah, thanks)
 
 (defmethod dispatch [::input/Message :PRIVMSG nil]
-  "a non-CTCP PRIVMSG"
   [bot msg])
 
 (defmethod dispatch [::input/Message :PRIVMSG :ACTION] 
-  "A CTCP ACTION request"
   [bot msg])
 
 (defmethod dispatch [::input/Message :PRIVMSG :PING]
- "a CTCP PING request" 
  [bot msg])
 
 (defmethod dispatch [::input/Message :PRIVMSG :TIME] 
-  "a CTCP TIME request"
   [bot msg])
 
 (defmethod dispatch [::input/Message :PRIVMSG :FINGER] 
-  "a CTCP FINGER request"
   [bot msg])
 
 (defmethod dispatch [::input/Message :PING nil]   [bot msg])
