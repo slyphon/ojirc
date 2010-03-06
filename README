@@ -1,0 +1,10 @@
+ojirc: it's a killer!
+
+This is an implementation of an IRC protocol client in clojure. The first thing
+I usually write when I'm learning a language is an IRC bot. Unfortunately,
+there's already clojurebot (which wraps PircBot, which is how I was planning on
+doing it), and rather than do a half-assed job at duplicating someone else's
+work, I decided to do a half-assed job doing something original. 
+
+More to follow as this project becomes whole-assed.
+
